@@ -4,11 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build",
-    "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "dev": "streamlit run app.py --server.port 3000 --server.address 0.0.0.0",
+    "start": "streamlit run app.py --server.port 3000 --server.address 0.0.0.0",
+    "build": "echo 'Build skipped: Streamlit app'",
+    "clean": "rm -rf dist server.js"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
