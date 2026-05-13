@@ -5,13 +5,12 @@ import pandas as pd
 from pymongo import MongoClient
 import io
 import time
-from groq import Groq
 import difflib
 
 # --- CÁC HÀM XỬ LÝ LOGIC ---
 
-def translate_query(client_groq, query):
-    """Dịch tên món ăn từ bất kỳ ngôn ngữ nào (chủ yếu tiếng Việt) sang tiếng Anh để tra cứu USDA"""
+def translate_query(query):
+    """Dịch tên món ăn từ bất kỳ ngôn ngữ nào (chủ yếu tiếng Việt) sang tiếng Anh để tra cứu USDA dùng Gemini"""
     if not query:
         return query
     
@@ -24,19 +23,16 @@ def translate_query(client_groq, query):
 
     prompt = f"Translate this food name to a standard English food name/category for USDA database searching. Return ONLY the English name, nothing else: {query}"
     try:
-        completion = client_groq.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0
-        )
-        translated = completion.choices[0].message.content.strip().lower()
+        model = genai.GenerativeModel(get_available_gemini_model())
+        response = model.generate_content(prompt)
+        translated = response.text.strip().lower()
         return translated.replace(".", "")
     except:
         return query
 
 def get_available_gemini_model():
     """Lấy tên model Gemini ổn định"""
-    return "gemini-2.5-flash"
+    return "gemini-2.0-flash"
 
 def fuzzy_food_search(df, keyword):
     """Tìm kiếm gần đúng trong dataframe"""
@@ -106,7 +102,7 @@ def lookup_and_calculate(db, keyword, df_dict=None):
         "avg_gl": sum(gl_list) / len(gl_list) if gl_list else 0
     }
 
-def analyze_with_groq(client_groq, ai_analysis, summary_data):
+def analyze_with_gemini(ai_analysis, summary_data):
     lang = st.session_state.get('lang', 'English')
     
     prompt = f"""
@@ -122,16 +118,10 @@ def analyze_with_groq(client_groq, ai_analysis, summary_data):
     """
 
     try:
-        completion = client_groq.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3
-        )
-        return completion.choices[0].message.content
+        model = genai.GenerativeModel(get_available_gemini_model())
+        response = model.generate_content(prompt)
+        return response.text
     except Exception as e:
-        error_str = str(e).lower()
-        if "401" in error_str or "authentication" in error_str:
-            return "❌ Lỗi xác thực Groq: API Key (GROQ_API_KEY) không hợp lệ hoặc đã hết hạn. Vui lòng kiểm tra lại thiết lập Secrets trong cài đặt của bạn."
         return f"⚠️ Lỗi phân tích từ AI: {e}"
 
 # --- HÀM CHÍNH ---
@@ -155,7 +145,6 @@ def run_diacam_lab():
 
     # 1. Cấu hình
     try:
-        groq_key = st.secrets.get("GROQ_API_KEY") or st.secrets.get("Groq_API_KEY")
         gemini_key = st.secrets.get("GEMINI_API_KEY")
         mongo_uri = st.secrets.get("MONGO_URI")
 
@@ -165,17 +154,16 @@ def run_diacam_lab():
         
         genai.configure(api_key=gemini_key)
         
-        if not groq_key:
-            st.error("Missing GROQ_API_KEY")
-            return
-            
-        client_groq = Groq(api_key=groq_key)
-        
         if not mongo_uri:
             st.error("Missing MONGO_URI")
             return
-        client_db = MongoClient(mongo_uri)
-        db = client_db["USDA_Healthy_Food"]
+            
+        @st.cache_resource
+        def get_diacam_db(uri):
+            client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+            return client["USDA_Healthy_Food"]
+            
+        db = get_diacam_db(mongo_uri)
     except Exception as e:
         st.error(f"Lỗi khởi tạo hệ thống: {e}")
         return
@@ -216,7 +204,7 @@ def run_diacam_lab():
                 """
                 try:
                     # Thử danh sách các model khả dụng
-                    models_to_try = [get_available_gemini_model(), "gemini-1.5-flash-latest", "gemini-1.5-pro"]
+                    models_to_try = [get_available_gemini_model(), "gemini-2.0-flash-lite-preview-02-05", "gemini-1.5-flash", "gemini-1.5-pro"]
                     success = False
                     for target_model in models_to_try:
                         try:
@@ -226,9 +214,12 @@ def run_diacam_lab():
                             success = True
                             break
                         except Exception as inner_e:
-                            if "404" not in str(inner_e):
-                                # Nếu lỗi khác 404 (ví dụ 429 quota), dừng luôn để báo lỗi thật
-                                raise inner_e
+                            # Log error to console for debugging
+                            print(f"Skipping model {target_model}: {inner_e}")
+                            if "404" not in str(inner_e) and "not found" not in str(inner_e).lower():
+                                # Nếu lỗi khác 404 (ví dụ 429 quota), và không phải "not found", thử model tiếp theo hoặc dừng
+                                # Ở AI Studio, 404 thường mang ý nghĩa model không khả dụng trong vùng hoặc đã bị đổi tên
+                                continue
                             continue
                     
                     if not success:
@@ -273,7 +264,7 @@ def run_diacam_lab():
 
                 if summary_for_groq:
                     with st.spinner("👨‍⚕️ " + ("Consulting Virtual Doctor..." if lang == "English" else "Đang tham vấn ý kiến chuyên gia...")):
-                        final_report = analyze_with_groq(client_groq, analysis_part, summary_for_groq)
+                        final_report = analyze_with_gemini(analysis_part, summary_for_groq)
                         st.markdown("---")
                         st.markdown(f"""
                             <div class="ai-box">
