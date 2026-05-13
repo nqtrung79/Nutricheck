@@ -9,6 +9,17 @@ import difflib
 
 # --- CÁC HÀM XỬ LÝ LOGIC ---
 
+def configure_gemini():
+    """Cấu hình Gemini API từ secrets"""
+    try:
+        api_key = st.secrets.get("GEMINI_API_KEY")
+        if api_key:
+            genai.configure(api_key=api_key)
+            return True
+    except:
+        pass
+    return False
+
 def translate_query(query):
     """Dịch tên món ăn từ bất kỳ ngôn ngữ nào (chủ yếu tiếng Việt) sang tiếng Anh để tra cứu USDA dùng Gemini"""
     if not query:
@@ -21,6 +32,9 @@ def translate_query(query):
     if not is_vietnamese:
         return query
 
+    if not configure_gemini():
+        return query
+
     prompt = f"Translate this food name to a standard English food name/category for USDA database searching. Return ONLY the English name, nothing else: {query}"
     try:
         model = genai.GenerativeModel(get_available_gemini_model())
@@ -31,7 +45,8 @@ def translate_query(query):
         return query
 
 def get_available_gemini_model():
-    """Lấy tên model Gemini ổn định"""
+    """Lấy tên model Gemini mặc định"""
+    # Mặc định dùng 2.0 flash
     return "gemini-2.0-flash"
 
 def fuzzy_food_search(df, keyword):
@@ -105,6 +120,9 @@ def lookup_and_calculate(db, keyword, df_dict=None):
 def analyze_with_gemini(ai_analysis, summary_data):
     lang = st.session_state.get('lang', 'English')
     
+    if not configure_gemini():
+        return "⚠️ Lỗi: Chưa cấu hình API Key cho Gemini."
+
     prompt = f"""
     Bạn là chuyên gia dinh dưỡng cao cấp chuyên về tiểu đường. Hãy phân tích báo cáo sau:
     1. Nhận diện hình ảnh: {ai_analysis}
@@ -145,15 +163,11 @@ def run_diacam_lab():
 
     # 1. Cấu hình
     try:
-        gemini_key = st.secrets.get("GEMINI_API_KEY")
-        mongo_uri = st.secrets.get("MONGO_URI")
-
-        if not gemini_key:
+        if not configure_gemini():
             st.error("Missing GEMINI_API_KEY")
             return
         
-        genai.configure(api_key=gemini_key)
-        
+        mongo_uri = st.secrets.get("MONGO_URI")
         if not mongo_uri:
             st.error("Missing MONGO_URI")
             return
@@ -203,9 +217,25 @@ def run_diacam_lab():
                 Keywords: [keyword1, keyword2, keyword3]
                 """
                 try:
-                    # Thử danh sách các model khả dụng
-                    models_to_try = [get_available_gemini_model(), "gemini-2.0-flash-lite-preview-02-05", "gemini-1.5-flash", "gemini-1.5-pro"]
+                    # Đảm bảo đã cấu hình
+                    configure_gemini()
+                    
+                    # Thử danh sách các model khả dụng rộng rãi
+                    models_to_try = [
+                        "gemini-2.0-flash", 
+                        "gemini-1.5-flash", 
+                        "gemini-1.5-flash-latest",
+                        "gemini-1.5-pro",
+                        "gemini-2.0-flash-exp",
+                        "gemini-1.5-flash-8b",
+                        "models/gemini-2.0-flash",
+                        "models/gemini-1.5-flash"
+                    ]
+                    # Thêm model mà người dùng đề cập nếu có (dù chưa phổ biến)
+                    models_to_try.insert(0, "gemini-2.5-flash") 
+                    
                     success = False
+                    last_error = ""
                     for target_model in models_to_try:
                         try:
                             model = genai.GenerativeModel(target_model)
@@ -214,16 +244,13 @@ def run_diacam_lab():
                             success = True
                             break
                         except Exception as inner_e:
+                            last_error = str(inner_e)
                             # Log error to console for debugging
-                            print(f"Skipping model {target_model}: {inner_e}")
-                            if "404" not in str(inner_e) and "not found" not in str(inner_e).lower():
-                                # Nếu lỗi khác 404 (ví dụ 429 quota), và không phải "not found", thử model tiếp theo hoặc dừng
-                                # Ở AI Studio, 404 thường mang ý nghĩa model không khả dụng trong vùng hoặc đã bị đổi tên
-                                continue
+                            print(f"Skipping model {target_model}: {last_error}")
                             continue
                     
                     if not success:
-                        st.error("❌ Không tìm thấy model Gemini khả dụng (404). Vui lòng kiểm tra lại cấu hình API.")
+                        st.error(f"❌ Không tìm thấy model Gemini khả dụng hoặc lỗi API. Chi tiết: {last_error}")
                         return
                 except Exception as e:
                     st.error(f"Gemini Error: {e}")
