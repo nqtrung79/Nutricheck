@@ -47,7 +47,7 @@ def translate_query(query):
 def get_available_gemini_model():
     """Lấy tên model Gemini mặc định"""
     # Mặc định dùng 2.0 flash
-    return "gemini-2.0-flash"
+    return "gemini-2.5-flash"
 
 def fuzzy_food_search(df, keyword):
     """Tìm kiếm gần đúng trong dataframe"""
@@ -222,12 +222,14 @@ def run_diacam_lab():
                     
                     # Thử danh sách các model khả dụng rộng rãi
                     models_to_try = [
+                        "gemini-2.5-flash",
                         "gemini-2.0-flash", 
                         "gemini-1.5-flash", 
                         "gemini-1.5-flash-latest",
                         "gemini-1.5-pro",
                         "gemini-2.0-flash-exp",
                         "gemini-1.5-flash-8b",
+                        "models/gemini-2.5-flash",
                         "models/gemini-2.0-flash",
                         "models/gemini-1.5-flash"
                     ]
