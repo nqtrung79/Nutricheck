@@ -35,7 +35,7 @@ def translate_query(client_groq, query):
         return query
 
 def get_available_gemini_model(client_gemini):
-    return "gemini-1.5-flash"
+    return "gemini-2.5-flash"
 
 def fuzzy_food_search(df, keyword):
     """Tìm kiếm gần đúng trong dataframe"""
