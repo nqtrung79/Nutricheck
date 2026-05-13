@@ -535,12 +535,9 @@ elif step == "HOME":
         if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
             with st.spinner("Đang kết nối với trí tuệ nhân tạo..." if st.session_state.lang == "Tiếng Việt" else "Connecting to AI..."):
                 try:
-                    gemini_key = st.secrets.get("GEMINI_API_KEY")
-                    if not gemini_key:
+                    if not DiaCam.configure_gemini():
                         st.error("Error: Gemini API Key not found in Secrets.")
                         return
-
-                    genai.configure(api_key=gemini_key)
                     
                     system_prompt = (
                         "You are an expert endocrinologist and nutritionist. "
