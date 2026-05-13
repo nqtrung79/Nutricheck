@@ -36,7 +36,7 @@ def translate_query(client_groq, query):
 
 def get_available_gemini_model():
     """Lấy tên model Gemini ổn định"""
-    return "gemini-2.5-flash"
+    return "gemini-1.5-flash"
 
 def fuzzy_food_search(df, keyword):
     """Tìm kiếm gần đúng trong dataframe"""
@@ -129,9 +129,10 @@ def analyze_with_groq(client_groq, ai_analysis, summary_data):
         )
         return completion.choices[0].message.content
     except Exception as e:
-        if "401" in str(e) or "authentication" in str(e).lower():
-            return "❌ Lỗi xác thực Groq: Vui lòng kiểm tra lại API Key trong thiết lập Secrets."
-        return f"⚠️ Lỗi phân tích: {e}"
+        error_str = str(e).lower()
+        if "401" in error_str or "authentication" in error_str:
+            return "❌ Lỗi xác thực Groq: API Key (GROQ_API_KEY) không hợp lệ hoặc đã hết hạn. Vui lòng kiểm tra lại thiết lập Secrets trong cài đặt của bạn."
+        return f"⚠️ Lỗi phân tích từ AI: {e}"
 
 # --- HÀM CHÍNH ---
 
@@ -154,23 +155,26 @@ def run_diacam_lab():
 
     # 1. Cấu hình
     try:
-        if "GEMINI_API_KEY" not in st.secrets:
-            st.warning("⚠️ " + ("Missing Gemini API Key in Secrets." if lang == "English" else "Chưa cấu hình Gemini API Key."))
+        groq_key = st.secrets.get("GROQ_API_KEY") or st.secrets.get("Groq_API_KEY")
+        gemini_key = st.secrets.get("GEMINI_API_KEY")
+        mongo_uri = st.secrets.get("MONGO_URI")
+
+        if not gemini_key:
+            st.error("Missing GEMINI_API_KEY")
             return
         
-        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        genai.configure(api_key=gemini_key)
         
-        if "Groq_API_KEY" not in st.secrets:
-            st.warning("⚠️ " + ("Missing Groq API Key in Secrets." if lang == "English" else "Chưa cấu hình Groq API Key."))
+        if not groq_key:
+            st.error("Missing GROQ_API_KEY")
             return
             
-        client_groq = Groq(api_key=st.secrets["Groq_API_KEY"])
+        client_groq = Groq(api_key=groq_key)
         
-        MONGO_URI = st.secrets.get("MONGO_URI")
-        if not MONGO_URI:
+        if not mongo_uri:
             st.error("Missing MONGO_URI")
             return
-        client_db = MongoClient(MONGO_URI)
+        client_db = MongoClient(mongo_uri)
         db = client_db["USDA_Healthy_Food"]
     except Exception as e:
         st.error(f"Lỗi khởi tạo hệ thống: {e}")
