@@ -1,0 +1,6 @@
+{
+  "name": "Diabetes Intelligence",
+  "description": "Hệ thống hỗ trợ bệnh nhân tiểu đường phân tích thực phẩm bằng AI và dữ liệu USDA",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["image_analysis"]
+}

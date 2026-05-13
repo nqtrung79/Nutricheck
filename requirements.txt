@@ -1,0 +1,8 @@
+streamlit
+pandas
+plotly
+pymongo
+google-generativeai
+requests
+groq
+pillow
