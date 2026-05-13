@@ -1,4 +1,7 @@
 import streamlit as st
+# --- 1. PAGE CONFIG MUST BE THE FIRST ST COMMAND ---
+st.set_page_config(page_title="Diabetes Research Factory", layout="wide")
+
 import pandas as pd
 import plotly.express as px
 from pymongo import MongoClient
@@ -7,7 +10,6 @@ from datetime import datetime
 import time
 import requests
 import google.generativeai as genai
-from groq import Groq
 import DiaCam
 import Display_Auth
 import Article_Lab
@@ -22,9 +24,6 @@ def send_to_webhook(data):
             requests.post(webhook_url, json=data, timeout=5)
     except Exception as e:
         st.error(f"Lỗi gửi dữ liệu: {e}")
-
-# --- 1. PAGE CONFIG ---
-st.set_page_config(page_title="Diabetes Research Factory", layout="wide")
 
 # --- 2. TỪ ĐIỂN ĐA NGÔN NGỮ (DICTIONARY) ---
 LANGUAGES = {
@@ -225,16 +224,24 @@ st.markdown("""
 
 # --- 4. DATABASE & SESSION STATE ---
 def get_db():
+    if 'db_instance' in st.session_state and st.session_state.db_instance:
+        return st.session_state.db_instance
     try:
-        MONGO_URI = st.secrets["MONGO_URI"]
-        client = MongoClient(MONGO_URI)
-        return client["USDA_Healthy_Food"]
-    except:
-        st.error("Lỗi kết nối Cơ sở dữ liệu. Vui lòng kiểm tra cấu hình MONGO_URI.")
+        mongo_uri = st.secrets.get("MONGO_URI")
+        if not mongo_uri:
+            st.error("Lỗi: Thiếu MONGO_URI trong Secrets.")
+            return None
+        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+        db = client["USDA_Healthy_Food"]
+        st.session_state.db_instance = db
+        return db
+    except Exception as e:
+        st.error(f"Lỗi kết nối Cơ sở dữ liệu: {e}")
         return None
 
-db_connection = get_db()
-articles_col = db_connection['food_articles'] if db_connection is not None else None
+# lazy init
+db_connection = None 
+articles_col = None
 
 if 'lang' not in st.session_state: st.session_state.lang = "Tiếng Việt"
 L = LANGUAGES[st.session_state.lang]
@@ -292,16 +299,21 @@ def is_spam(text):
 
 @st.cache_data
 def get_raw_nutrients(fdc_id):
-    if db_connection is None: return pd.DataFrame()
+    db_conn_local = get_db()
+    if db_conn_local is None: return pd.DataFrame()
     pipeline = [{"$match": {"fdc_id": int(fdc_id)}}, {
         "$lookup": {"from": "Nutrient_Definitions", "localField": "nutrient_id", "foreignField": "id",
                     "as": "details"}}, {"$unwind": "$details"}]
-    results = list(db_connection.Core_Nutrients.aggregate(pipeline))
+    results = list(db_conn_local.Core_Nutrients.aggregate(pipeline))
     return pd.DataFrame(
         [{"Nutrient": r['details']['name'], "Amount": r['amount'], "Unit": r['details']['unit_name']} for r in results])
 
 # --- 7. MÀN HÌNH ĐĂNG KÝ CHI TIẾT ---
 step = st.session_state.get('step', 'HOME')
+
+# Get db connection lazily
+db_conn = get_db()
+articles_col = db_conn['food_articles'] if db_conn is not None else None
 
 if step == "DANG_KY_FORM":
     display_sidebar_auth()
@@ -352,7 +364,7 @@ elif step == "HOME":
         if 'page' not in st.session_state: st.session_state.page = 1
         skip = (st.session_state.page - 1) * 10
 
-        if db_connection is not None:
+        if db_conn is not None:
             # Tải từ điển CSV để hỗ trợ tìm kiếm gần đúng
             df_dict = None
             try:
@@ -360,21 +372,14 @@ elif step == "HOME":
             except:
                 pass
 
-            # Sử dụng GROQ_API_KEY đồng nhất
-            groq_key = st.secrets.get("GROQ_API_KEY") or st.secrets.get("Groq_API_KEY")
-            client_groq = None
-            if groq_key:
-                from groq import Groq
-                client_groq = Groq(api_key=groq_key)
-
             search_keywords = [search_input]
             english_query = search_input
             
-            if search_input and client_groq:
+            if search_input:
                 # Dịch từ khóa nếu là tiếng Việt
                 with st.spinner("🔍 Translating..." if st.session_state.lang == "English" else "🔍 Đang dịch từ khóa..."):
                     try:
-                        english_query = DiaCam.translate_query(client_groq, search_input)
+                        english_query = DiaCam.translate_query(search_input)
                         if english_query and english_query != search_input:
                             st.info(f"🔎 {'Searching for' if st.session_state.lang == 'English' else 'Đang tìm kiếm'}: **{english_query}**")
                             search_keywords.append(english_query)
@@ -397,7 +402,7 @@ elif step == "HOME":
             else:
                 query = {}
                 
-            scored_data = list(db_connection.Scored_Foods.find(query).sort("score", -1).skip(skip).limit(10))
+            scored_data = list(db_conn.Scored_Foods.find(query).sort("score", -1).skip(skip).limit(10))
 
             if scored_data:
                 df_view = pd.DataFrame(scored_data)[["icon", "description", "score", "status"]]
@@ -506,7 +511,7 @@ elif step == "HOME":
 
         st.divider()
         st.subheader("👨‍⚕️ " + ("Expert Diabetes Consultation" if st.session_state.lang == "English" else "Tư vấn Chuyên gia Tiểu đường"))
-        st.caption("Powered by Llama 3.3 on Groq Infrastructure")
+        st.caption("Powered by Gemini 2.0 AI Infrastructure")
 
         col_doc, col_intro = st.columns([1, 4])
         with col_doc:
@@ -530,39 +535,35 @@ elif step == "HOME":
         if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
             with st.spinner("Đang kết nối với trí tuệ nhân tạo..." if st.session_state.lang == "Tiếng Việt" else "Connecting to AI..."):
                 try:
-                    if "Groq_API_KEY" not in st.secrets:
-                        st.error("Lỗi: Không tìm thấy Groq_API_KEY trong file secrets.toml")
+                    gemini_key = st.secrets.get("GEMINI_API_KEY")
+                    if not gemini_key:
+                        st.error("Error: Gemini API Key not found in Secrets.")
                         return
 
-                    client_groq = Groq(api_key=st.secrets["Groq_API_KEY"])
+                    genai.configure(api_key=gemini_key)
                     
                     system_prompt = (
                         "You are an expert endocrinologist and nutritionist. "
                         "Provide scientific, evidence-based advice on diabetes and nutrition. "
-                        f"Keep responses professional, concise, and in {st.session_state.lang}."
+                        f"Keep responses professional, concise, and in {st.session_state.lang}. "
+                        "Current conversation:\n"
                     )
+                    
+                    # Thêm lịch sử hội thoại
+                    chat_history = ""
+                    for msg in st.session_state.messages[:-1]:
+                        chat_history += f"{msg['role']}: {msg['content']}\n"
+                    
+                    full_prompt = system_prompt + chat_history + f"user: {st.session_state.messages[-1]['content']}"
 
-                    completion = client_groq.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": st.session_state.messages[-1]["content"]}
-                        ],
-                        temperature=0.5,
-                        max_tokens=1024,
-                    )
-
-                    ai_response = completion.choices[0].message.content
+                    model = genai.GenerativeModel(DiaCam.get_available_gemini_model())
+                    response = model.generate_content(full_prompt)
+                    
+                    ai_response = response.text
                     st.session_state.messages.append({"role": "assistant", "content": ai_response})
                     st.rerun()
 
                 except Exception as e:
-                    error_msg = str(e)
-                    if "401" in error_msg:
-                        st.error("Lỗi xác thực: API Key của Groq không đúng hoặc đã bị thu hồi.")
-                    elif "429" in error_msg:
-                        st.error("Lỗi hạn mức: Bạn đã gửi quá nhiều yêu cầu trong thời gian ngắn.")
-                    else:
-                        st.error(f"Lỗi hệ thống: {error_msg}")
+                    st.error(f"Lỗi hệ thống: {e}")
 
     handle_ai_chat()
