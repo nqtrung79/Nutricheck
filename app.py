@@ -224,7 +224,7 @@ st.markdown("""
 
 # --- 4. DATABASE & SESSION STATE ---
 def get_db():
-    if 'db_instance' in st.session_state and st.session_state.db_instance:
+    if 'db_instance' in st.session_state and st.session_state.db_instance is not None:
         return st.session_state.db_instance
     try:
         mongo_uri = st.secrets.get("MONGO_URI")
