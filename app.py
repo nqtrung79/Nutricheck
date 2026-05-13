@@ -360,10 +360,12 @@ elif step == "HOME":
             except:
                 pass
 
+            # Sử dụng GROQ_API_KEY đồng nhất
+            groq_key = st.secrets.get("GROQ_API_KEY") or st.secrets.get("Groq_API_KEY")
             client_groq = None
-            if "Groq_API_KEY" in st.secrets:
+            if groq_key:
                 from groq import Groq
-                client_groq = Groq(api_key=st.secrets["Groq_API_KEY"])
+                client_groq = Groq(api_key=groq_key)
 
             search_keywords = [search_input]
             english_query = search_input
@@ -371,10 +373,13 @@ elif step == "HOME":
             if search_input and client_groq:
                 # Dịch từ khóa nếu là tiếng Việt
                 with st.spinner("🔍 Translating..." if st.session_state.lang == "English" else "🔍 Đang dịch từ khóa..."):
-                    english_query = DiaCam.translate_query(client_groq, search_input)
-                    if english_query != search_input:
-                        st.info(f"🔎 {'Searching for' if st.session_state.lang == 'English' else 'Đang tìm kiếm'}: **{english_query}**")
-                        search_keywords.append(english_query)
+                    try:
+                        english_query = DiaCam.translate_query(client_groq, search_input)
+                        if english_query and english_query != search_input:
+                            st.info(f"🔎 {'Searching for' if st.session_state.lang == 'English' else 'Đang tìm kiếm'}: **{english_query}**")
+                            search_keywords.append(english_query)
+                    except:
+                        pass
 
             if english_query and df_dict is not None:
                 fuzzy_matches = DiaCam.fuzzy_food_search(df_dict, english_query)
@@ -382,10 +387,13 @@ elif step == "HOME":
                     search_keywords.extend(fuzzy_matches)
             
             if search_input:
-                # Loại bỏ các từ khóa trùng lặp
-                search_keywords = list(set([k for k in search_keywords if k]))
-                pattern = "|".join([re.escape(k) for k in search_keywords])
-                query = {"description": {"$regex": pattern, "$options": "i"}}
+                # Loại bỏ các từ khóa trùng lặp và làm sạch
+                search_keywords = list(set([k.strip() for k in search_keywords if k and k.strip()]))
+                if search_keywords:
+                    pattern = "|".join([re.escape(k) for k in search_keywords])
+                    query = {"description": {"$regex": pattern, "$options": "i"}}
+                else:
+                    query = {}
             else:
                 query = {}
                 
