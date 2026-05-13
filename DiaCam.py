@@ -22,20 +22,21 @@ def translate_query(client_groq, query):
     if not is_vietnamese:
         return query
 
-    prompt = f"Translate this food name to English for nutrient database searching. Return ONLY the English name, nothing else: {query}"
+    prompt = f"Translate this food name to a standard English food name/category for USDA database searching. Return ONLY the English name, nothing else: {query}"
     try:
         completion = client_groq.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0
         )
-        translated = completion.choices[0].message.content.strip()
-        return translated
+        translated = completion.choices[0].message.content.strip().lower()
+        return translated.replace(".", "")
     except:
         return query
 
-def get_available_gemini_model(client_gemini):
-    return "gemini-2.5-flash"
+def get_available_gemini_model():
+    """Lấy tên model Gemini ổn định"""
+    return "gemini-1.5-flash"
 
 def fuzzy_food_search(df, keyword):
     """Tìm kiếm gần đúng trong dataframe"""
@@ -210,9 +211,25 @@ def run_diacam_lab():
                 Keywords: [keyword1, keyword2, keyword3]
                 """
                 try:
-                    model = genai.GenerativeModel('gemini-1.5-flash')
-                    response = model.generate_content([gemini_prompt, img])
-                    full_text = response.text
+                    # Thử danh sách các model khả dụng
+                    models_to_try = [get_available_gemini_model(), "gemini-1.5-flash-latest", "gemini-1.5-pro"]
+                    success = False
+                    for target_model in models_to_try:
+                        try:
+                            model = genai.GenerativeModel(target_model)
+                            response = model.generate_content([gemini_prompt, img])
+                            full_text = response.text
+                            success = True
+                            break
+                        except Exception as inner_e:
+                            if "404" not in str(inner_e):
+                                # Nếu lỗi khác 404 (ví dụ 429 quota), dừng luôn để báo lỗi thật
+                                raise inner_e
+                            continue
+                    
+                    if not success:
+                        st.error("❌ Không tìm thấy model Gemini khả dụng (404). Vui lòng kiểm tra lại cấu hình API.")
+                        return
                 except Exception as e:
                     st.error(f"Gemini Error: {e}")
                     return
