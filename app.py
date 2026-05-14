@@ -511,7 +511,7 @@ elif step == "HOME":
 
         st.divider()
         st.subheader("👨‍⚕️ " + ("Expert Diabetes Consultation" if st.session_state.lang == "English" else "Tư vấn Chuyên gia Tiểu đường"))
-        st.caption("Powered by Gemini 2.0 AI Infrastructure")
+        st.caption("Powered by Gemini 2.5 AI Infrastructure")
 
         col_doc, col_intro = st.columns([1, 4])
         with col_doc:
