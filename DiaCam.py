@@ -45,9 +45,8 @@ def translate_query(query):
         return query
 
 def get_available_gemini_model():
-    """Lấy tên model Gemini mặc định"""
-    # Mặc định dùng 2.0 flash
-    return "gemini-2.0-flash"
+    """Lấy tên model Gemini mặc định theo yêu cầu người dùng"""
+    return "gemini-2.5-flash"
 
 def fuzzy_food_search(df, keyword):
     """Tìm kiếm gần đúng trong dataframe"""
@@ -220,14 +219,12 @@ def run_diacam_lab():
                     # Đảm bảo đã cấu hình
                     configure_gemini()
                     
-                    # Thử danh sách các model 2.0+ ổn định
+                    # Thử danh sách các model khả dụng, ưu tiên 2.5 flash
                     models_to_try = [
+                        "gemini-2.5-flash",
                         "gemini-2.0-flash", 
-                        "gemini-2.0-flash-exp",
-                        "gemini-2.0-flash-thinking-exp-01-21"
+                        "gemini-2.0-flash-exp"
                     ]
-                    # Thêm "gemini-2.5-flash" theo yêu cầu của bạn (nếu có trong tương lai)
-                    models_to_try.insert(0, "gemini-2.5-flash") 
                     
                     success = False
                     last_error = ""
